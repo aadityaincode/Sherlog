@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+.venv/
+venv/
+
+# Secrets
+.env
+
+# Generated data (keep small committed samples in data/samples/ instead)
+data/generated/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+workspace/
