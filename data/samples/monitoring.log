@@ -1,0 +1,15 @@
+﻿2026-07-09T09:00:00.000Z novamon db-01 METRIC pool.connections.in_use{pool="subscriptions-db"} 4/10
+2026-07-09T09:00:04.000Z novamon api-01 METRIC http.request.duration_ms{route="/api/v1/subscriptions/renew"} p95=594
+2026-07-09T09:00:12.000Z novamon api-01 HEALTHCHECK GET /healthz 200 OK latency_ms=8
+2026-07-09T09:00:57.000Z novamon db-01 METRIC pool.connections.in_use{pool="subscriptions-db"} 4/10
+2026-07-09T09:00:58.000Z novamon api-01 METRIC http.request.duration_ms{route="/api/v1/subscriptions/renew"} p95=310
+2026-07-09T09:01:09.000Z novamon api-01 HEALTHCHECK GET /healthz 200 OK latency_ms=12
+2026-07-09T09:01:54.000Z novamon db-01 METRIC pool.connections.in_use{pool="subscriptions-db"} 2/10
+2026-07-09T09:02:00.000Z novamon api-01 METRIC http.request.duration_ms{route="/api/v1/subscriptions/renew"} p95=549
+2026-07-09T09:02:05.000Z novamon api-01 HEALTHCHECK GET /healthz 200 OK latency_ms=8
+2026-07-09T09:02:59.000Z novamon db-01 METRIC pool.connections.in_use{pool="subscriptions-db"} 5/10
+2026-07-09T09:03:01.000Z novamon api-01 METRIC http.request.duration_ms{route="/api/v1/subscriptions/renew"} p95=580
+2026-07-09T09:03:14.000Z novamon api-01 HEALTHCHECK GET /healthz 200 OK latency_ms=7
+2026-07-09T09:03:59.000Z novamon db-01 METRIC pool.connections.in_use{pool="subscriptions-db"} 3/10
+2026-07-09T09:04:06.000Z novamon api-01 METRIC http.request.duration_ms{route="/api/v1/subscriptions/renew"} p95=360
+2026-07-09T09:04:19.000Z novamon api-01 HEALTHCHECK GET /healthz 200 OK latency_ms=10

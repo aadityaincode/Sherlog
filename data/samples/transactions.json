@@ -1,0 +1,41 @@
+[
+  {
+    "gateway": "StrivePay",
+    "event_type": "charge.settled",
+    "transaction_id": "TXN-C46C17C52EFA",
+    "auth_code": "AUTH-D68332BA",
+    "user_id": "USR-62418",
+    "payment_method_id": "PM-66205",
+    "plan_code": "PREMIUM_MONTHLY",
+    "amount": 22.99,
+    "currency": "USD",
+    "status": "APPROVED",
+    "settled_at": "2026-07-09T09:01:52.661Z"
+  },
+  {
+    "gateway": "StrivePay",
+    "event_type": "charge.settled",
+    "transaction_id": "TXN-A3566F893697",
+    "auth_code": "AUTH-481194F3",
+    "user_id": "USR-44313",
+    "payment_method_id": "PM-52408",
+    "plan_code": "BASIC_MONTHLY",
+    "amount": 9.99,
+    "currency": "USD",
+    "status": "APPROVED",
+    "settled_at": "2026-07-09T09:02:35.394Z"
+  },
+  {
+    "gateway": "StrivePay",
+    "event_type": "charge.settled",
+    "transaction_id": "TXN-2AC5D499CF18",
+    "auth_code": "AUTH-3E2B3C05",
+    "user_id": "USR-30346",
+    "payment_method_id": "PM-62268",
+    "plan_code": "STANDARD_MONTHLY",
+    "amount": 15.49,
+    "currency": "USD",
+    "status": "APPROVED",
+    "settled_at": "2026-07-09T09:02:52.695Z"
+  }
+]
