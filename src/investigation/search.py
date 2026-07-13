@@ -13,7 +13,7 @@ timeline is reconstructed in two passes:
 from datetime import timedelta
 from dateutil import parser as dateparser
 
-from es_client import get_client, INDEX_NAME
+from client import get_client, INDEX_NAME
 
 DEFAULT_CORRELATION_WINDOW_SECONDS = 15
 

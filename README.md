@@ -18,3 +18,27 @@ source code, and generates a structured RCA report.
 
 Primary scenario: **C — Silently Failed Financial Transaction** (payment succeeds,
 downstream update silently fails, customer sees no error).
+
+## Data
+
+- `data/samples/` — small committed examples of each log format, for browsing on GitHub. Not used by the pipeline.
+- `data/generated/` — the real dataset (gitignored, regenerate with the command below).
+
+## Setup
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env   # fill in ANTHROPIC_API_KEY
+docker compose -f src/investigation/docker.yml up -d   # elasticsearch + kibana
+```
+
+## Run
+
+```bash
+python -m src.log_generator   # writes data/generated/
+
+cd src/investigation
+python ingest.py ../../data/generated/app.log ../../data/generated/monitoring.log ../../data/generated/transactions.json
+python search.py              # smoke test: prints a reconstructed transaction timeline
+```
