@@ -27,7 +27,7 @@ def run(app_log_path: str, monitoring_log_path: str, transactions_path: str,
     entries += parse_transactions(transactions_path)
 
     success, errors = bulk(es, build_actions(entries), stats_only=False, raise_on_error=False)
-    print(f"Indexed {success} documents ({len(errors)} errors)")
+    print(f"Indexed {success} documents ({len(errors)} Indexing Errors)")
 
     es.indices.refresh(index=INDEX_NAME)
     return len(entries)

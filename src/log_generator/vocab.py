@@ -1,4 +1,4 @@
-"""Constants mirroring docs/vocabulary.md — the shared source of truth.
+"""Constants mirroring docs/vocabulary.md, the shared source of truth.
 
 Every string here exists verbatim in the demo-app repo (novastream-billing).
 If the app changes, update docs/vocabulary.md and this module together.

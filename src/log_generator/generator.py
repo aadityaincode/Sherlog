@@ -6,7 +6,7 @@ transaction id, plus a hidden answer key for scoring the investigation engine:
   app.log            plain-text application logs (the five novastream loggers)
   transactions.json  StrivePay gateway settlement records (JSON array)
   monitoring.log     infra metrics/alerts for subscriptions-db and the API
-  answer_key.json    the planted broken transactions — never fed to the engine
+  answer_key.json    the planted broken transactions, never fed to the engine
 
 Flow signatures come from docs/vocabulary.md:
 
@@ -18,8 +18,8 @@ Broken transactions are clustered into short incident windows during which the
 subscriptions-db connection pool is exhausted; monitoring.log shows the pool
 pinned at 10/10 with critical alerts over exactly those windows, so the three
 sources corroborate each other. Timestamps are intentionally messy across
-sources (app.log local-style with comma millis, the other two ISO-8601 UTC)
-— normalizing that is the ingestion pipeline's job.
+sources (app.log local-style with comma millis, the other two ISO-8601 UTC).
+Normalizing that is the ingestion pipeline's job.
 """
 
 import json
@@ -35,7 +35,7 @@ from . import vocab
 # Pool-exhaustion wait baked into the demo app (see message 9 / vocabulary doc)
 POOL_WAIT_MS = 5000
 
-# Plan codes that don't exist — used by the declined-noise flow (message 6)
+# Plan codes that don't exist, used by the declined-noise flow (message 6)
 UNKNOWN_PLANS = ("STUDENT_MONTHLY", "PREMIUM_MONTHLY_V2", "FAMILY_ANNUAL", "BASIC_WEEKLY")
 
 
@@ -126,7 +126,7 @@ def generate_broken_transaction(fake, rng, start):
     SubscriptionService.renew() swallows the DatabaseConnectionError, so
     messages 8 and 10 never appear and the API still answers 200 (message 2).
     The lone novastream.db ERROR (message 9) lands POOL_WAIT_MS after the
-    renewal attempt started — the acquire() timeout.
+    renewal attempt started, the acquire() timeout.
     """
     ids = _new_identifiers(fake)
     plan = rng.choice(list(vocab.PLANS))

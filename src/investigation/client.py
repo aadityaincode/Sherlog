@@ -1,7 +1,7 @@
 """
 Elasticsearch connection + index mapping for the unified log store.
-Run `docker-compose up -d` (see docker-compose.yml) to get a local
-single-node cluster at http://localhost:9200 before using this.
+Run `docker compose -f docker.yml up -d` to get a local single-node
+cluster at http://localhost:9200 before using this.
 """
 from elasticsearch import Elasticsearch
 
@@ -24,8 +24,7 @@ MAPPING = {
                 "type": "text",                 # full-text searchable
                 "fields": {"raw": {"type": "keyword", "ignore_above": 512}},
             },
-            # Keep the original line/record for evidence, but don't index it
-            # as a bunch of separate searchable fields — it's for display only.
+            # Kept for display only, not indexed as searchable fields.
             "raw": {"type": "object", "enabled": False},
         }
     },

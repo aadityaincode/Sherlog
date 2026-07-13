@@ -1,4 +1,4 @@
-"""CLI: python -m src.log_generator [--normal 400 --broken 8 --declined 20 ...]"""
+"""CLI: python -m src.log_generator [--normal 400 --broken 8 --declined 20 --seed 42]"""
 
 import argparse
 

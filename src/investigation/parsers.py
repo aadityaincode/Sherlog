@@ -2,18 +2,13 @@
 Format-specific parsers that turn each raw log source into a list of
 normalized LogEntry objects sharing the same schema (schema.py).
 
-Verified against the actual sample files:
-  - app.log:         2,948 lines, 0 unmatched by APP_LOG_RE
-  - monitoring.log:   1,108 lines, 0 unmatched by MON_RE
-  - transactions.json: 408 records, valid JSON array
-
 Notes on correlation keys (important for the search layer):
   - app.log and transactions.json both carry an explicit txn_id/user_id,
     so they correlate by exact key match.
-  - monitoring.log (infra metrics/health checks/alerts) has NO txn_id or
-    user_id — that's realistic; a DB connection pool alert doesn't know
-    which transaction it affected. Those events correlate by *time window*
-    instead, which is handled in search.py, not here.
+  - monitoring.log (infra metrics/health checks/alerts) has no txn_id or
+    user_id. A DB connection pool alert doesn't know which transaction it
+    affected, so those events correlate by time window instead, handled
+    in search.py, not here.
 """
 import re
 import json
@@ -23,7 +18,7 @@ from typing import List
 from schema import LogEntry
 
 # ---------------------------------------------------------------------------
-# app.log — e.g.
+# app.log example:
 # 2026-07-09 09:39:08,710 INFO [novastream.api] Renewal request received [user: USR-95005, plan: PREMIUM_MONTHLY, txn: TXN-0F14D1C5530B]
 # 2026-07-09 09:39:14,226 ERROR [novastream.db] Failed to acquire connection from pool 'subscriptions-db' after 5000ms: pool exhausted (10/10 connections in use)
 # ---------------------------------------------------------------------------
@@ -47,10 +42,9 @@ def parse_app_log(path: str) -> List[LogEntry]:
 
             m = APP_LOG_RE.match(line)
             if not m:
-                # Never silently drop a line we can't parse — production logs
-                # will always have some lines that don't fit the pattern
-                # (multi-line stack traces, format drift, etc). Keep it as
-                # evidence rather than losing it.
+                # Keep unparseable lines as evidence instead of dropping them.
+                # Production logs always have some lines that don't fit
+                # (stack traces, format drift, etc).
                 entries.append(LogEntry(
                     timestamp=datetime.now(timezone.utc),
                     source="app",
@@ -79,7 +73,7 @@ def parse_app_log(path: str) -> List[LogEntry]:
 
 
 # ---------------------------------------------------------------------------
-# monitoring.log — e.g.
+# monitoring.log example:
 # 2026-07-09T09:00:00.000Z novamon db-01 METRIC pool.connections.in_use{pool="subscriptions-db"} 4/10
 # 2026-07-09T09:00:12.000Z novamon api-01 HEALTHCHECK GET /healthz 200 OK latency_ms=8
 # 2026-07-09T09:38:47.843Z novamon db-01 ALERT ConnectionPoolExhausted pool="subscriptions-db" waited_ms=5000 severity=critical
@@ -124,7 +118,7 @@ def parse_monitoring_log(path: str) -> List[LogEntry]:
 
 
 # ---------------------------------------------------------------------------
-# transactions.json — array of gateway settlement records
+# transactions.json: array of gateway settlement records
 # ---------------------------------------------------------------------------
 def parse_transactions(path: str) -> List[LogEntry]:
     with open(path, "r", encoding="utf-8") as f:

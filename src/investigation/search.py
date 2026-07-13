@@ -2,12 +2,13 @@
 Query layer used by the Investigation Engine (LLM + RAG) to pull evidence
 out of Elasticsearch.
 
-Key design point: app.log and transactions.json carry an explicit txn_id,
-but monitoring.log (infra metrics/alerts) does not. So a transaction's
-timeline is reconstructed in two passes:
+Key design point: most app.log and transactions.json lines carry an explicit
+txn_id, but some don't. monitoring.log alerts never do, and a few app.log
+ERROR lines (e.g. the novastream.db pool-exhaustion message) have no {txn}
+placeholder either. So a transaction's timeline is reconstructed in two passes:
   1. exact match on txn_id (app + transaction events)
-  2. time-window correlation against monitoring ERROR/ALERT events that
-     happened during that transaction's span (infra signals don't know
+  2. time-window correlation against any ERROR/ALERT event with no txn_id
+     that happened during that transaction's span (these signals don't know
      which transaction they broke, only *when* they happened)
 """
 from datetime import timedelta
@@ -41,10 +42,10 @@ def get_timeline_by_txn(es, txn_id: str, index: str = INDEX_NAME,
         "query": {
             "bool": {
                 "filter": [
-                    {"term": {"source": "monitoring"}},
                     {"range": {"timestamp": {"gte": window_start, "lte": window_end}}},
                 ],
                 "must": [{"terms": {"level": ["ERROR", "ALERT"]}}],
+                "must_not": [{"exists": {"field": "txn_id"}}],
             }
         },
         "sort": [{"timestamp": "asc"}],
@@ -84,7 +85,7 @@ def full_text_search(es, query_string: str, index: str = INDEX_NAME,
 
 def errors_near(es, timestamp_iso: str, window_seconds: int = 30, index: str = INDEX_NAME):
     """All ERROR/ALERT/WARN events within a time window of a given timestamp,
-    regardless of correlation key — useful when you only have a rough
+    regardless of correlation key. Useful when you only have a rough
     'something broke around this time' signal."""
     t = dateparser.isoparse(timestamp_iso)
     start = (t - timedelta(seconds=window_seconds)).isoformat()
@@ -104,8 +105,18 @@ def errors_near(es, timestamp_iso: str, window_seconds: int = 30, index: str = I
 
 
 if __name__ == "__main__":
-    # quick manual smoke test once you've run ingest.py against a live ES instance
+    # quick manual smoke test once you've run ingest.py against a live ES instance.
+    # Pulls the first broken txn_id from the answer key so this stays correct
+    # across regenerated datasets (different --seed runs produce different txn_ids).
+    import json
+    from pathlib import Path
+
+    answer_key_path = Path(__file__).resolve().parents[2] / "data" / "generated" / "answer_key.json"
+    answer_key = json.loads(answer_key_path.read_text())
+    txn_id = answer_key[0]["txn_id"]
+
     es = get_client()
-    timeline = get_timeline_by_txn(es, "TXN-0F14D1C5530B")
+    timeline = get_timeline_by_txn(es, txn_id)
+    print(f"Timeline for {txn_id}:")
     for e in timeline:
         print(e["timestamp"], e["source"], e["level"], e["component"], "|", e["message"])
