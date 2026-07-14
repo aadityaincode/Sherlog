@@ -11,9 +11,13 @@ placeholder either. So a transaction's timeline is reconstructed in two passes:
      that happened during that transaction's span (these signals don't know
      which transaction they broke, only *when* they happened)
 """
+import sys
 from datetime import timedelta
+from pathlib import Path
+
 from dateutil import parser as dateparser
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "ingestion"))
 from client import get_client, INDEX_NAME
 
 DEFAULT_CORRELATION_WINDOW_SECONDS = 15

@@ -29,8 +29,8 @@ downstream update silently fails, customer sees no error).
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # fill in ANTHROPIC_API_KEY
-docker compose -f src/investigation/docker.yml up -d   # elasticsearch + kibana
+cp .env.example .env   # fill in GEMINI_API_KEY
+docker compose -f src/ingestion/docker.yml up -d   # elasticsearch + kibana
 ```
 
 ## Run
@@ -38,7 +38,10 @@ docker compose -f src/investigation/docker.yml up -d   # elasticsearch + kibana
 ```bash
 python -m src.log_generator   # writes data/generated/
 
-cd src/investigation
+cd src/ingestion
 python ingest.py ../../data/generated/app.log ../../data/generated/monitoring.log ../../data/generated/transactions.json
+
+cd ../investigation
 python search.py              # smoke test: prints a reconstructed transaction timeline
+python engine.py              # smoke test: one LLM tool-call round trip
 ```
