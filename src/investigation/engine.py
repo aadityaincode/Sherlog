@@ -2,6 +2,7 @@
 LLM investigation engine: drives Gemini's function-calling loop over the
 tools in tools.py to reconstruct a failure from a complaint or txn_id.
 """
+import json
 import os
 import sys
 import time
@@ -55,7 +56,9 @@ get_timeline_by_txn already returns both the transaction's own events and correl
 Customer complaints usually don't include a txn_id. Work backwards to one:
 - If the complaint names a user id (USR-xxxxx), call search_by_user, find the renewal transaction matching the complaint (right plan, right rough time), take its txn_id, then get_timeline_by_txn.
 - If there is no user id either, use full_text_search with distinctive details from the complaint (plan code, amount) or a symptom phrase, then narrow down to a txn_id the same way.
+- If the complaint gives a time of day, that is your best lead: learn the dataset's date from any search result, then call events_in_window around that time. The renewal-request INFO lines in the window carry user and txn ids; match on the complaint's plan/amount, then get_timeline_by_txn.
 - A complaint like "I was charged but my subscription still shows expired and I got no confirmation email" is the classic symptom of the broken-renewal bug: the charge settled but message 8 (ACTIVE) and 10 (confirmation email) are missing from that user's timeline.
+- If a user id or txn id from the complaint returns zero events, it does not exist in the log store. Do not go fishing for a different transaction to blame: submit with issue_found false and state in the evidence which searches you ran and that they returned nothing — plain statements, no invented timestamps or fake log lines.
 
 ## Submitting
 
@@ -151,7 +154,7 @@ def to_gemini_tool(tool_schemas: list[dict]) -> types.Tool:
     return types.Tool(function_declarations=declarations)
 
 
-MAX_ROUNDS = 6
+MAX_ROUNDS = 8
 
 # Transient-error retry policy. 429s (free tier: 15 requests/min) and 5xx
 # blips both resolve on their own; anything else fails fast. The last delay
@@ -187,6 +190,7 @@ def investigate(prompt: str, verbose: bool = True) -> dict:
     config = types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, tools=[tool])
 
     contents = [types.Content(role="user", parts=[types.Part(text=prompt)])]
+    seen_calls: set[str] = set()
 
     for round_num in range(1, MAX_ROUNDS + 1):
         response = _generate_with_retry(client, contents, config, verbose)
@@ -208,12 +212,26 @@ def investigate(prompt: str, verbose: bool = True) -> dict:
         response_parts = []
         for fc in calls:
             args = dict(fc.args)
-            if verbose:
-                print(f"[round {round_num}] TOOL CALL {fc.name}({args})")
-            result = execute_tool(es, fc.name, args)
-            if verbose:
-                print(f"  -> {len(result)} events returned")
-            response_parts.append(types.Part.from_function_response(name=fc.name, response={"result": result}))
+            # Don't burn rounds re-running an identical query: seen live
+            # (a nonexistent user id sent the model into repeated
+            # full_text_search calls until it hit the round cap).
+            call_key = json.dumps({"name": fc.name, "args": args}, sort_keys=True, default=str)
+            if call_key in seen_calls:
+                if verbose:
+                    print(f"[round {round_num}] DUPLICATE CALL blocked: {fc.name}({args})")
+                payload = {
+                    "error": "You already ran this exact query and have its results. "
+                             "Try a different query, or submit your conclusion."
+                }
+            else:
+                seen_calls.add(call_key)
+                if verbose:
+                    print(f"[round {round_num}] TOOL CALL {fc.name}({args})")
+                result = execute_tool(es, fc.name, args)
+                if verbose:
+                    print(f"  -> {len(result)} events returned")
+                payload = {"result": result}
+            response_parts.append(types.Part.from_function_response(name=fc.name, response=payload))
         contents.append(types.Content(role="user", parts=response_parts))
 
     raise RuntimeError(f"Investigation did not conclude within {MAX_ROUNDS} rounds")

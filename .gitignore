@@ -9,6 +9,15 @@ venv/
 # Generated data (keep small committed samples in data/samples/ instead)
 data/generated/
 
+# Correlator's working clone of the demo-app repo
+.repo_cache/
+
+# Pipeline output — regenerable, except one committed known-good run kept as
+# the live-demo backup and as a sample for anyone browsing the repo
+reports/*
+!reports/rca_TXN-0F14D1C5530B.md
+!reports/rca_TXN-0F14D1C5530B.json
+
 # OS / editor
 .DS_Store
 .vscode/

@@ -36,12 +36,42 @@ docker compose -f src/ingestion/docker.yml up -d   # elasticsearch + kibana
 ## Run
 
 ```bash
-python -m src.log_generator   # writes data/generated/
-
+# 1. generate the dataset and load it into Elasticsearch
+python -m src.log_generator
 cd src/ingestion
 python ingest.py ../../data/generated/app.log ../../data/generated/monitoring.log ../../data/generated/transactions.json
+cd ../..
 
-cd ../investigation
-python search.py              # smoke test: prints a reconstructed transaction timeline
-python engine.py              # smoke test: one LLM tool-call round trip
+# 2. the whole pipeline, one command: complaint in -> RCA report + diagram out
+#    (the user id below is from the default dataset; if you regenerated with a
+#    different --seed, grab one from data/generated/answer_key.json instead)
+python src/pipeline.py "Customer USR-95005 says they were charged but their subscription still shows expired and no email arrived"
+
+# or the UI: paste a complaint, watch the investigation happen
+streamlit run ui/app.py
 ```
+
+Reports land in `reports/` as markdown (with an embedded Mermaid journey
+diagram) plus the raw JSON. Two known-good runs are committed there as
+demo fallbacks.
+
+## Verify
+
+```bash
+cd src/investigation
+python score.py   # full accuracy suite vs the hidden answer key: 5 broken + 2 clean + 2 free-text complaints
+```
+
+## Layout
+
+- `src/log_generator/` — synthetic dataset for Scenario C (normal + broken + declined renewals)
+- `src/ingestion/` — parsers for the 3 log formats -> normalized schema -> Elasticsearch
+- `src/investigation/` — the brain: query tools + Gemini agent loop + scoring harness
+- `src/correlation/` — GitPython: failure point -> `file:line` + snippet in the demo-app repo
+- `src/reporting/` — RCA report writer + Mermaid journey diagram
+- `src/pipeline.py` — end-to-end entrypoint
+- `ui/app.py` — thin Streamlit front end
+- `docs/` — architecture diagram + shared vocabulary doc
+
+The demo "client codebase" is a separate public repo:
+[novastream-billing](https://github.com/aadityaincode/novastream-billing).

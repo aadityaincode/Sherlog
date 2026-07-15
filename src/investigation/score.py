@@ -7,6 +7,7 @@ invention (grounding). Testing only the first would hide false positives
 and fabricated citations entirely.
 """
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -18,31 +19,90 @@ from parsers import parse_app_log, parse_monitoring_log, parse_transactions
 DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "generated"
 ANSWER_KEY_PATH = DATA_DIR / "answer_key.json"
 
-# One known-normal and one known-declined txn_id from data/generated/app.log,
-# spot-checked by hand. Neither is a bug, so issue_found must come back false.
-NEGATIVE_TEST_IDS = ["TXN-EFD3B21E499C", "TXN-802F03FAC985"]
+# Everything below is derived from whatever dataset is currently on disk, so
+# regenerating with a different --seed can't silently break the suite (it
+# did once: hardcoded seed-99 ids all went stale after a default-seed rerun).
 
-# Free-text complaints with no txn_id, phrased like a real support ticket.
-# Both describe broken transactions from the answer key; the engine has to
-# work backwards (user id or plan/amount details) to the right txn on its own.
-COMPLAINT_CASES = [
-    {
-        "complaint": (
-            "Customer USR-02406 called in: they renewed their subscription "
-            "this afternoon, the card was charged, but the account still "
-            "shows expired and no confirmation email ever arrived."
-        ),
-        "expected_txn": "TXN-CF6BDA433D27",
-    },
-    {
-        "complaint": (
-            "A customer on the BASIC_MONTHLY plan says they paid $9.99 "
-            "around 10:18 this morning, the money left their account, but "
-            "their subscription was never reactivated and they got no email."
-        ),
-        "expected_txn": "TXN-635C29787581",
-    },
-]
+_RECEIVED_RE = re.compile(
+    r"^(?P<date>\S+) (?P<time>\S+) INFO \[novastream\.api\] Renewal request received "
+    r"\[user: (?P<user>USR-\d+), plan: (?P<plan>\w+), txn: (?P<txn>TXN-[0-9A-F]+)\]"
+)
+
+
+def _dataset_cases() -> tuple[list[str], list[dict]]:
+    """Pick negative txn ids (one normal, one declined) and build complaint
+    cases (one with a user id, one with only plan/amount/time) from the
+    current app.log + answer key."""
+    answer_key = json.loads(ANSWER_KEY_PATH.read_text())
+    broken = {e["txn_id"]: e for e in answer_key}
+
+    app_log = (DATA_DIR / "app.log").read_text().splitlines()
+    received = {}  # txn -> match
+    activated, declined_txns = set(), set()
+    amounts = {}  # txn -> amount
+
+    for line in app_log:
+        m = _RECEIVED_RE.match(line)
+        if m:
+            received[m["txn"]] = m
+        if "Subscription status set to ACTIVE" in line:
+            t = re.search(r"txn: (TXN-[0-9A-F]+)", line)
+            if t:
+                activated.add(t.group(1))
+        if "Unknown plan code" in line:
+            t = re.search(r"txn: (TXN-[0-9A-F]+)", line)
+            if t:
+                declined_txns.add(t.group(1))
+        a = re.search(r"APPROVED \[txn: (TXN-[0-9A-F]+), auth: \S+, amount: \$(\S+)\]", line)
+        if a:
+            amounts[a.group(1)] = a.group(2)
+
+    normal_id = next(t for t in received if t in activated and t not in broken)
+    declined_id = next(iter(declined_txns))
+
+    first, second = answer_key[0], answer_key[1 % len(answer_key)]
+    m2 = received[second["txn_id"]]
+
+    # Broken renewals cluster into incident windows, so several broken txns
+    # can genuinely match one plan/amount/time-of-day description. Any of
+    # them is a correct answer to the ambiguous complaint; demanding one
+    # specific txn failed a run where the engine picked an equally valid
+    # sibling from the same window.
+    def _minutes(match) -> int:
+        h, m = match["time"].split(":")[:2]
+        return int(h) * 60 + int(m)
+
+    ambiguous_matches = {
+        txn
+        for txn in broken
+        if received[txn]["plan"] == m2["plan"]
+        and amounts.get(txn) == amounts[m2["txn"]]
+        and abs(_minutes(received[txn]) - _minutes(m2)) <= 2
+    }
+
+    complaints = [
+        {
+            "complaint": (
+                f"Customer {first['user_id']} called in: they renewed their "
+                "subscription, the card was charged, but the account still "
+                "shows expired and no confirmation email ever arrived."
+            ),
+            "expected_txns": {first["txn_id"]},
+        },
+        {
+            "complaint": (
+                f"A customer on the {m2['plan']} plan says they paid "
+                f"${amounts[m2['txn']]} around {m2['time'][:5]}, the money left "
+                "their account, but their subscription was never reactivated "
+                "and they got no email."
+            ),
+            "expected_txns": ambiguous_matches,
+        },
+    ]
+    return [normal_id, declined_id], complaints
+
+
+NEGATIVE_TEST_IDS, COMPLAINT_CASES = _dataset_cases()
 
 
 def load_message_corpus() -> list[str]:
@@ -107,7 +167,7 @@ def score_negative(txn_id: str) -> dict:
 
 
 def score_complaint(case: dict) -> dict:
-    label = case["expected_txn"]
+    label = "/".join(sorted(case["expected_txns"]))
     try:
         result = investigate(case["complaint"], verbose=False)
     except Exception as e:
@@ -116,9 +176,9 @@ def score_complaint(case: dict) -> dict:
     evidence = result.get("evidence", [])
     ungrounded = verify_evidence(evidence)
     issue_found_ok = result.get("issue_found") is True
-    # Proof it traced the complaint to the right transaction: the expected
-    # txn_id must show up in the cited evidence.
-    right_txn = any(case["expected_txn"] in line for line in evidence)
+    # Proof it traced the complaint to a right transaction: one of the
+    # acceptable txn_ids must show up in the cited evidence.
+    right_txn = any(txn in line for txn in case["expected_txns"] for line in evidence)
     failure_point_ok = result.get("failure_point") == "SubscriptionService.renew"
 
     ok = issue_found_ok and right_txn and failure_point_ok and not ungrounded
@@ -151,7 +211,7 @@ if __name__ == "__main__":
     print("\n--- complaint cases (free text, no txn_id given) ---")
     complaint_results = []
     for i, case in enumerate(COMPLAINT_CASES, 1):
-        print(f"[{i}/{len(COMPLAINT_CASES)}] investigating complaint -> {case['expected_txn']}...")
+        print(f"[{i}/{len(COMPLAINT_CASES)}] investigating complaint -> {'/'.join(sorted(case['expected_txns']))}...")
         complaint_results.append(score_complaint(case))
 
     pos_passed = sum(r["ok"] for r in positive_results)

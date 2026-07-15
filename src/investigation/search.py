@@ -71,8 +71,20 @@ def search_by_user(es, user_id: str, index: str = INDEX_NAME, size: int = 200):
 def full_text_search(es, query_string: str, index: str = INDEX_NAME,
                       level: str = None, source: str = None, size: int = 50):
     """Free-text search over log messages, e.g. an engineer typing
-    'connection pool exhausted' or the LLM searching for a symptom phrase."""
-    must = [{"multi_match": {"query": query_string, "fields": ["message", "component"]}}]
+    'connection pool exhausted' or the LLM searching for a symptom phrase.
+
+    operator=and: every token must match. With the default OR, an id-shaped
+    query like 'USR-00001' tokenizes to [usr, 00001] and the usr token alone
+    matches every line with any user id — 50 confident-looking hits for an
+    identifier that doesn't exist, which sends the investigating LLM chasing
+    other users' transactions. All-tokens matching returns an honest 0."""
+    must = [{
+        "multi_match": {
+            "query": query_string,
+            "fields": ["message", "component"],
+            "operator": "and",
+        }
+    }]
     filters = []
     if level:
         filters.append({"term": {"level": level}})
@@ -83,6 +95,23 @@ def full_text_search(es, query_string: str, index: str = INDEX_NAME,
         "query": {"bool": {"must": must, "filter": filters}},
         "sort": ["_score"],
         "size": size,
+    }
+    return [h["_source"] for h in es.search(index=index, body=body)["hits"]["hits"]]
+
+
+def events_in_window(es, timestamp_iso: str, window_seconds: int = 30, index: str = INDEX_NAME):
+    """ALL events (any level) within a time window, sorted by time. The
+    complement to errors_near: infra errors carry no txn_id, but the INFO
+    lines around them do — this is how a time-of-day lead ('it happened
+    around 13:03') becomes a concrete txn_id."""
+    t = dateparser.isoparse(timestamp_iso)
+    start = (t - timedelta(seconds=window_seconds)).isoformat()
+    end = (t + timedelta(seconds=window_seconds)).isoformat()
+
+    body = {
+        "query": {"range": {"timestamp": {"gte": start, "lte": end}}},
+        "sort": [{"timestamp": "asc"}],
+        "size": 200,
     }
     return [h["_source"] for h in es.search(index=index, body=body)["hits"]["hits"]]
 

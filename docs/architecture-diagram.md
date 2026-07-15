@@ -4,36 +4,38 @@
 
 ```mermaid
 flowchart TD
-    A[Customer Complaint / Transaction ID] --> B[Log Ingestion Pipeline]
+    A[Customer Complaint / Transaction ID] --> D
 
-    subgraph Sources["Log Sources"]
-        S1[App Server Logs]
-        S2[Payment / Transaction Logs]
-        S3[Monitoring Logs]
+    subgraph Sources["Log Sources (synthetic, Scenario C)"]
+        S1[app.log]
+        S2[transactions.json]
+        S3[monitoring.log]
     end
 
-    S1 --> B
+    S1 --> B[Log Ingestion Pipeline<br/>parsers.py / ingest.py]
     S2 --> B
     S3 --> B
 
-    B -->|"normalize + tag<br/>(user_id / transaction_id)"| C[(Unified Log Store<br/>Elasticsearch / DataFrame / JSON)]
+    B -->|"normalize + tag<br/>(user_id / txn_id)"| C[(Unified Log Store<br/>Elasticsearch)]
 
-    C --> D[AI Investigation Engine<br/>LLM + RAG]
-    D -->|"reconstructed<br/>timeline"| E[Source Code Correlator<br/>GitPython]
+    C -->|"query tools:<br/>timeline / user / text / time-window"| D[AI Investigation Engine<br/>Gemini function-calling agent]
+    D -->|"failure_point +<br/>cited evidence"| E[Source Code Correlator<br/>GitPython]
 
-    subgraph Repo["GitHub Repository"]
+    subgraph Repo["novastream-billing (GitHub)"]
         R1[(Source Files)]
     end
     R1 --> E
 
-    E -->|"file + line number<br/>+ code snippet"| F[RCA Report Generator]
-    D -->|"timeline evidence"| F
+    E -->|"file:line + snippet"| F[RCA Report Generator<br/>LLM writeup]
+    D -->|"evidence passthrough"| F
+    D -->|"reconstructed timeline"| J[Journey Diagram<br/>Mermaid, deterministic]
 
     F --> G[["RCA Report<br/>(Root Cause, Evidence,<br/>Short-term Fix, Long-term Fix)"]]
+    J --> G
 
-    style A fill:#fef3c7,stroke:#d97706
-    style G fill:#dcfce7,stroke:#16a34a
-    style C fill:#e0e7ff,stroke:#4338ca
+    style A fill:#fef3c7,stroke:#d97706,color:#1f2937
+    style G fill:#dcfce7,stroke:#16a34a,color:#1f2937
+    style C fill:#e0e7ff,stroke:#4338ca,color:#1f2937
 ```
 
 ## 2. UML Component / Class Diagram
@@ -41,130 +43,99 @@ flowchart TD
 ```mermaid
 classDiagram
     class SyntheticLogGenerator {
-        -scenario: ScenarioType
+        -vocab: VocabularyDoc
         -faker: Faker
-        +generateAppLogs(n: int) LogEntry[]
-        +generatePaymentLogs(n: int) LogEntry[]
-        +generateMonitoringLogs(n: int) LogEntry[]
-        +injectFailure(scenario: ScenarioType) LogEntry[]
+        +generate_normal_transaction() Transaction
+        +generate_broken_transaction() Transaction
+        +generate_declined_transaction() Transaction
+        +write_dataset(out_dir) files
     }
 
     class LogEntry {
         +timestamp: DateTime
         +source: String
         +level: String
+        +component: String
         +user_id: String
-        +transaction_id: String
+        +txn_id: String
         +message: String
         +raw: Dict
     }
 
-    class LogIngestionPipeline {
-        -store: LogStore
-        +ingest(rawLogs: LogEntry[]) void
-        +normalize(rawLogs: LogEntry[]) LogEntry[]
-        +tagCorrelationKeys(logs: LogEntry[]) LogEntry[]
-        +query(filter: QueryFilter) LogEntry[]
-    }
-
-    class LogStore {
-        <<interface>>
-        +write(entries: LogEntry[]) void
-        +search(query: QueryFilter) LogEntry[]
+    class IngestionPipeline {
+        +parse_app_log(path) LogEntry[]
+        +parse_monitoring_log(path) LogEntry[]
+        +parse_transactions(path) LogEntry[]
+        +run(paths) int
     }
 
     class ElasticsearchStore {
-        +write(entries: LogEntry[]) void
-        +search(query: QueryFilter) LogEntry[]
+        +create_index(mapping) void
+        +bulk_write(entries: LogEntry[]) void
     }
 
-    class DataFrameStore {
-        +write(entries: LogEntry[]) void
-        +search(query: QueryFilter) LogEntry[]
+    class QueryTools {
+        +get_timeline_by_txn(txn_id) LogEntry[]
+        +search_by_user(user_id) LogEntry[]
+        +full_text_search(query) LogEntry[]
+        +errors_near(timestamp) LogEntry[]
     }
 
     class InvestigationEngine {
-        -llm: LLMClient
-        -retriever: RAGRetriever
-        +investigate(complaint: String, txnId: String) Timeline
-        -reconstructTimeline(logs: LogEntry[]) Timeline
-        -identifyFailurePoint(timeline: Timeline) FailureEvent
+        -llm: GeminiClient
+        -tools: QueryTools
+        +investigate(complaint) InvestigationResult
+        -agent_loop() max 6 rounds
+        -submit_investigation_result() forced structured output
     }
 
-    class RAGRetriever {
-        -store: LogStore
-        +retrieveRelevantLogs(query: String, txnId: String) LogEntry[]
-    }
-
-    class Timeline {
-        +events: TimelineEvent[]
-        +failurePoint: FailureEvent
-    }
-
-    class TimelineEvent {
-        +timestamp: DateTime
-        +description: String
-        +logRef: LogEntry
-    }
-
-    class FailureEvent {
-        +description: String
-        +suspectedModule: String
-        +confidence: Float
+    class InvestigationResult {
+        +issue_found: bool
+        +failure_point: String
+        +service: String
+        +error_message: String
+        +evidence: String[]
     }
 
     class SourceCodeCorrelator {
-        -repo: GitRepo
-        +locateFailure(failure: FailureEvent) CodeReference
-        -searchRepo(keyword: String) CodeReference[]
-    }
-
-    class GitRepo {
-        -path: String
-        +clone(url: String) void
-        +getFile(path: String) String
-        +blame(path: String, line: int) CommitInfo
+        -repo: GitRepo (GitPython clone)
+        +correlate(failure_point) CodeReference
     }
 
     class CodeReference {
-        +filePath: String
-        +lineNumber: int
-        +snippet: String
-        +commitInfo: CommitInfo
+        +file: String
+        +line: int
+        +code_snippet: String
     }
 
-    class ReportGenerator {
-        +generateRCA(timeline: Timeline, code: CodeReference) RCAReport
+    class RCAGenerator {
+        +generate_rca(investigation, code) RCAReport
+        +render_markdown(report) String
+    }
+
+    class JourneyDiagram {
+        +timeline_to_mermaid(timeline, issue_found) String
     }
 
     class RCAReport {
-        +rootCause: String
-        +evidence: Evidence[]
-        +shortTermFix: String
-        +longTermFix: String
-        +toMarkdown() String
-    }
-
-    class Evidence {
-        +logLines: LogEntry[]
-        +codeSnippet: CodeReference
+        +root_cause_statement: String
+        +customer_impact: String
+        +short_term_fix: String
+        +long_term_fix: String
+        +evidence: Evidence
     }
 
     SyntheticLogGenerator --> LogEntry : creates
-    LogIngestionPipeline --> LogStore : uses
-    LogStore <|.. ElasticsearchStore
-    LogStore <|.. DataFrameStore
-    InvestigationEngine --> RAGRetriever : uses
-    RAGRetriever --> LogStore : queries
-    InvestigationEngine --> Timeline : produces
-    Timeline --> TimelineEvent
-    Timeline --> FailureEvent
-    SourceCodeCorrelator --> GitRepo : uses
+    IngestionPipeline --> LogEntry : normalizes into
+    IngestionPipeline --> ElasticsearchStore : bulk loads
+    QueryTools --> ElasticsearchStore : queries
+    InvestigationEngine --> QueryTools : calls as LLM tools
+    InvestigationEngine --> InvestigationResult : produces
     SourceCodeCorrelator --> CodeReference : produces
-    ReportGenerator --> RCAReport : produces
-    RCAReport --> Evidence
-    ReportGenerator ..> InvestigationEngine : consumes Timeline
-    ReportGenerator ..> SourceCodeCorrelator : consumes CodeReference
+    RCAGenerator --> RCAReport : produces
+    RCAGenerator ..> InvestigationResult : consumes
+    RCAGenerator ..> CodeReference : consumes
+    JourneyDiagram ..> QueryTools : renders timeline from
 ```
 
 ## 3. UML Sequence Diagram — Scenario C Walkthrough (Silent Payment Failure)
@@ -172,38 +143,38 @@ classDiagram
 ```mermaid
 sequenceDiagram
     actor User as Customer
-    participant API as Support/Trigger API
-    participant Ingest as Log Ingestion Pipeline
-    participant Store as Unified Log Store
-    participant Engine as Investigation Engine (LLM+RAG)
-    participant Repo as Source Code Correlator
-    participant Git as GitHub Repo
-    participant Report as Report Generator
+    participant Pipe as Pipeline (CLI / Streamlit)
+    participant Engine as Investigation Engine (Gemini agent)
+    participant Store as Elasticsearch
+    participant Corr as Source Code Correlator
+    participant Git as novastream-billing repo
+    participant Report as RCA Generator
 
-    User->>API: "I paid $50, subscription still expired"
-    API->>Ingest: pull logs (user_id / txn_id)
-    Ingest->>Store: normalize + write tagged entries
-    API->>Engine: investigate(complaint, txn_id)
-    Engine->>Store: retrieve relevant logs (RAG)
-    Store-->>Engine: app, payment, monitoring log entries
+    User->>Pipe: "I was charged, subscription still expired, no email"
+    Pipe->>Engine: investigate(complaint)
+    Engine->>Store: search_by_user(USR-xxxxx)
+    Store-->>Engine: candidate transactions
+    Engine->>Store: get_timeline_by_txn(TXN-xxxx)
+    Store-->>Engine: timeline incl. time-window-correlated errors
 
-    Engine->>Engine: reconstruct timeline
-    Note over Engine: 10:03:01 Renew clicked<br/>10:03:02 Payment gateway → success<br/>10:03:03 Update subscription → exception<br/>10:03:03 Exception swallowed, API returns 200
+    Note over Engine: payment APPROVED, then novastream.db ERROR,<br/>messages 8 (ACTIVE) and 10 (email) ABSENT,<br/>API still returned 200 → broken-renewal signature
+    Engine->>Engine: submit_investigation_result (forced structured output)
+    Engine-->>Pipe: {issue_found, failure_point, service, error, evidence}
 
-    Engine->>Repo: locateFailure(failure_signature)
-    Repo->>Git: search repo for matching handler
-    Git-->>Repo: SubscriptionService.java:142
-    Repo-->>Engine: CodeReference (file, line, snippet)
+    Pipe->>Corr: correlate("SubscriptionService.renew")
+    Corr->>Git: clone/pull, locate class + method + except handler
+    Git-->>Corr: app/services/subscription_service.py:38
+    Corr-->>Pipe: CodeReference (file, line, snippet)
 
-    Engine->>Report: generateRCA(timeline, codeRef)
-    Report->>Report: assemble root cause + evidence + fixes
-    Report-->>API: RCAReport (markdown)
-    API-->>User: "Root cause found: exception swallowed at line 142..."
+    Pipe->>Report: generate_rca(investigation, codeRef)
+    Report-->>Pipe: RCA report (root cause, impact, fixes)
+    Pipe->>Pipe: timeline_to_mermaid (journey diagram, incl. NEVER-HAPPENED steps)
+    Pipe-->>User: reports/rca_TXN-xxxx.md
 ```
 
 ## Notes on the design
 
-- **Loose coupling via `LogStore` interface** lets you swap Elasticsearch for a simple DataFrame/JSON store during early development (per building block #2) without touching the ingestion or investigation logic.
-- **`InvestigationEngine` and `SourceCodeCorrelator` are independent stages** — the engine only needs a `FailureEvent` signature (e.g. exception type, module name, timestamp) to hand off to the correlator, so scenarios A/B/C all flow through the same pipeline shape.
-- **`RCAReport.toMarkdown()`** is the natural seam for turning the structured object into the final human-readable report (and could equally emit JSON/HTML for a dashboard).
-- Scenarios A and B reuse every box in the flow diagram unchanged — only the `SyntheticLogGenerator.injectFailure()` logic and the shape of `FailureEvent` differ per scenario.
+- **The agent decides its own query strategy.** The engine isn't a fixed retrieval pipeline: Gemini chooses which of the four query tools to call, reads the results, and follows the evidence (complaint → user → transaction → timeline). A forced `submit_investigation_result` tool call ends the loop, guaranteeing schema-valid output — including `issue_found: false` for clean transactions, so it doesn't hallucinate failures.
+- **Evidence is never LLM-generated.** Log lines pass through verbatim from the store; the code location comes from deterministic GitPython search; the journey diagram is deterministic templating. The LLM writes analysis and fixes, not citations — and the scoring harness (`score.py`) verifies every cited line against the parsed log corpus.
+- **`InvestigationEngine` and `SourceCodeCorrelator` are independent stages** — the correlator only needs a `failure_point` string, so scenarios A/B would flow through the same pipeline shape with a different planted bug.
+- **Absence as evidence:** the broken-renewal signature is defined by log lines that are *missing* (subscription-ACTIVE, confirmation email). The journey diagram draws those as dashed NEVER-HAPPENED arrows — that's the story of Scenario C in one picture.

@@ -1,8 +1,14 @@
 """
 Tool definitions and dispatcher exposing search.py's query functions to the
-LLM investigation engine via Claude's tool-use API.
+LLM investigation engine's function-calling API.
 """
-from search import get_timeline_by_txn, search_by_user, full_text_search, errors_near
+from search import (
+    errors_near,
+    events_in_window,
+    full_text_search,
+    get_timeline_by_txn,
+    search_by_user,
+)
 
 TOOL_SCHEMAS = [
     {
@@ -54,6 +60,24 @@ TOOL_SCHEMAS = [
         },
     },
     {
+        "name": "events_in_window",
+        "description": (
+            "Get ALL log events (every level, including INFO) within a time "
+            "window of a given timestamp, sorted by time. Use this to turn a "
+            "time-of-day lead into a concrete txn_id: the renewal-request "
+            "INFO lines around a failure carry the user and txn ids that "
+            "infra errors lack."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "timestamp_iso": {"type": "string", "description": "ISO-8601 timestamp to search around"},
+                "window_seconds": {"type": "integer", "description": "Half-width of the search window in seconds, default 30"},
+            },
+            "required": ["timestamp_iso"],
+        },
+    },
+    {
         "name": "errors_near",
         "description": (
             "Get all ERROR/ALERT/WARN events within a time window of a given "
@@ -79,6 +103,9 @@ _DISPATCH = {
         es, args["query_string"], level=args.get("level"), source=args.get("source")
     ),
     "errors_near": lambda es, args: errors_near(
+        es, args["timestamp_iso"], window_seconds=args.get("window_seconds", 30)
+    ),
+    "events_in_window": lambda es, args: events_in_window(
         es, args["timestamp_iso"], window_seconds=args.get("window_seconds", 30)
     ),
 }

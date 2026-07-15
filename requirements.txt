@@ -1,5 +1,4 @@
 faker
-pandas
 gitpython
 google-genai
 python-dotenv
